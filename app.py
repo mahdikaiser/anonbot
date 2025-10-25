@@ -113,8 +113,8 @@ def webhook():
     user_id = from_user.get("id")
     text = (message.get("text") or "").strip()
 
-    # پاسخ به /start
-    if text.startswith("/start"):
+    # ✅ پاسخ به /start یا هر حالت مشابه
+    if text.lower().startswith("/start"):
         if check_channel_membership(user_id):
             tg_send_message(chat_id, "سلام 😊 لطفاً پیام ناشناست رو بنویس.")
         else:
