@@ -9,7 +9,7 @@ from pathlib import Path
 from flask import Flask, request, jsonify
 import requests
 
-# ---------- تنظیمات ENV ----------
+# ---------- تنظیمات محیط ----------
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 OWNER_CHAT_ID = os.environ.get("OWNER_CHAT_ID", "").strip()
 BASE_URL = os.environ.get("BASE_URL", "").strip()
@@ -17,7 +17,6 @@ WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
 ANON_SALT = os.environ.get("ANON_SALT", "")
 JSON_PATH = Path("messages.json")
 
-# بررسی وجود تنظیمات
 if not BOT_TOKEN or not OWNER_CHAT_ID or not BASE_URL:
     raise RuntimeError("❌ لطفاً BOT_TOKEN, OWNER_CHAT_ID, BASE_URL را در env تنظیم کنید.")
 
@@ -71,12 +70,12 @@ def webhook():
     user_id = message["from"]["id"]
     text = (message.get("text") or "").strip()
 
-    # ✅ پاسخ به /start یا هر حالت مشابه
-    if text.lower().startswith("/start"):
+    # ✅ واکنش به همه‌ی حالت‌های start
+    if text and text.lower().split()[0].startswith("/start"):
         tg_send_message(chat_id, "سلام 😊 لطفاً پیام ناشناست رو بنویس.")
         return jsonify({"ok": True})
 
-    # ✅ بقیه پیام‌ها = ارسال به ادمین و پاسخ "با موفقیت ارسال شد"
+    # ✅ دریافت سایر پیام‌ها
     anon_id = make_anon_id(user_id)
     data = load_data()
     entry = {
@@ -88,14 +87,19 @@ def webhook():
     save_data(data)
 
     # ارسال برای ادمین
-    owner_text = f"📨 پیام ناشناس جدید\n\nID: `{anon_id}`\nزمان: {entry['timestamp_utc']}\n\n{text}"
+    owner_text = (
+        f"📨 پیام ناشناس جدید\n\n"
+        f"ID: `{anon_id}`\n"
+        f"زمان: {entry['timestamp_utc']}\n\n"
+        f"{text}"
+    )
     tg_send_message(OWNER_CHAT_ID, owner_text, parse_mode="Markdown")
 
     # پاسخ به کاربر
     tg_send_message(chat_id, "✅ پیامت با موفقیت ارسال شد.")
     return jsonify({"ok": True})
 
-# ---------- راه‌اندازی وبهوک ----------
+# ---------- ست وبهوک ----------
 if __name__ == "__main__":
     ensure_json()
     try:
