@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from flask import Flask, request, jsonify
 import requests
+import jdatetime  # 📅 تبدیل تاریخ به شمسی
 
 # ---------- تنظیمات ----------
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
@@ -18,7 +19,6 @@ WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
 ANON_SALT = os.environ.get("ANON_SALT", "")
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "").strip()
 
-# ✅ نام کاربری و ریپو گیت‌هاب (حتماً دقیق بنویس)
 GITHUB_USER = "mahdikaiser"
 REPO = "anonbot"
 
@@ -27,7 +27,6 @@ JSON_PATH = Path("messages.json")
 if not BOT_TOKEN or not OWNER_CHAT_ID or not BASE_URL:
     raise RuntimeError("❌ لطفاً BOT_TOKEN, OWNER_CHAT_ID, BASE_URL را در env تنظیم کنید.")
 
-# ---------- تنظیمات عمومی ----------
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("anonbot")
 
@@ -41,6 +40,11 @@ app = Flask(__name__)
 def utc_now_iso():
     return datetime.utcnow().isoformat() + "Z"
 
+def now_persian():
+    """برگرداندن زمان و تاریخ به شمسی با فرمت زیبا"""
+    j_now = jdatetime.datetime.now()
+    return j_now.strftime("%Y/%m/%d 🗓 %H:%M ⏰")
+
 def make_anon_id(uid: int) -> str:
     raw = hmac.new(ANON_SALT.encode(), str(uid).encode(), hashlib.sha256).hexdigest()
     return raw[:16]
@@ -52,21 +56,17 @@ def tg_api(method, **params):
         log.warning("TG API error %s -> %s %s", method, resp.status_code, resp.text)
     return resp
 
-def tg_send_message(chat_id, text, parse_mode=None):
-    tg_api("sendMessage", chat_id=chat_id, text=text, parse_mode=parse_mode)
+def tg_send_message(chat_id, text):
+    tg_api("sendMessage", chat_id=chat_id, text=text)
 
 # ---------- ذخیره در GitHub ----------
 def push_json_to_github(data):
     if not GITHUB_TOKEN:
         log.warning("⛔ GITHUB_TOKEN not set, skipping GitHub upload")
         return
-
     headers = {"Authorization": f"token {GITHUB_TOKEN}"}
-    # گرفتن SHA برای به‌روزرسانی فایل
     response = requests.get(GITHUB_API, headers=headers)
-    sha = None
-    if response.status_code == 200:
-        sha = response.json().get("sha")
+    sha = response.json().get("sha") if response.status_code == 200 else None
 
     content = base64.b64encode(json.dumps(data, ensure_ascii=False, indent=2).encode()).decode()
     payload = {
@@ -102,7 +102,6 @@ def webhook():
         "timestamp_utc": utc_now_iso()
     }
 
-    # ذخیره موقتی در حافظه
     messages = []
     if JSON_PATH.exists():
         messages = json.loads(JSON_PATH.read_text(encoding="utf-8")).get("messages", [])
@@ -110,15 +109,26 @@ def webhook():
     data = {"messages": messages}
     JSON_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # آپلود در GitHub
     push_json_to_github(data)
 
-    # ارسال به ادمین
-    owner_text = f"📨 پیام ناشناس جدید\n\nID: `{anon_id}`\nزمان: {entry['timestamp_utc']}\n\n{text}"
-    tg_send_message(OWNER_CHAT_ID, owner_text, parse_mode="Markdown")
+    # ✅ تاریخ و ساعت شمسی
+    persian_time = now_persian()
 
-    # پاسخ به فرستنده
-    tg_send_message(chat_id, "✅ پیامت با موفقیت ارسال شد.")
+    # ✅ پیام برای ادمین
+    owner_text = (
+        f"📩 پیام ناشناس جدید دریافت شد\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"🆔 شناسه کاربر: {anon_id}\n"
+        f"📅 تاریخ و ساعت: {persian_time}\n"
+        f"💬 متن پیام:\n{text}\n"
+        f"━━━━━━━━━━━━━━━"
+    )
+
+    tg_send_message(OWNER_CHAT_ID, owner_text)
+
+    # ✅ پاسخ به فرستنده
+    tg_send_message(chat_id, "✅ پیامت با موفقیت ارسال شد. 📨")
+
     return jsonify({"ok": True})
 
 # ---------- راه‌اندازی ----------
